@@ -211,6 +211,114 @@ def create_expense():
     }), 201
 
 
+@app.get("/api/expenses")
+def get_expenses():
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM expenses")
+    rows = cursor.fetchall()
+    conn.close()
+
+    expenses = []
+    for r in rows:
+        expenses.append({
+            "id": r["id"],
+            "title": r["title"],
+            "description": r["description"],
+            "amount": r["amount"],
+            "date": r["date"],
+            "category": r["category"],
+            "user_id": r["user_id"]
+        })
+
+    return jsonify({"success": True, "data": expenses}), 200
+
+
+@app.get("/api/expenses/<int:expense_id>")
+def get_expense(expense_id):
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM expenses WHERE id = ?", (expense_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({"success": False, "message": "Expense not found"}), 404
+
+    expense = {
+        "id": row["id"],
+        "title": row["title"],
+        "description": row["description"],
+        "amount": row["amount"],
+        "date": row["date"],
+        "category": row["category"],
+        "user_id": row["user_id"]
+    }
+
+    return jsonify({"success": True, "data": expense}), 200
+
+
+@app.put("/api/expenses/<int:expense_id>")
+def update_expense(expense_id):
+    data = request.get_json() or {}
+    allowed_categories = {"Food", "Education", "Entertainment"}
+
+    # Check if expense exists
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM expenses WHERE id = ?", (expense_id,))
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({"success": False, "message": "Expense not found"}), 404
+
+    # Validate category if provided
+    if "category" in data and data.get("category") not in allowed_categories:
+        conn.close()
+        return jsonify({"success": False, "message": f"Invalid category. Allowed: {sorted(list(allowed_categories))}"}), 400
+
+    fields = []
+    values = []
+    for key in ("title", "description", "amount", "category", "user_id"):
+        if key in data:
+            fields.append(f"{key} = ?")
+            values.append(data.get(key))
+
+    if not fields:
+        conn.close()
+        return jsonify({"success": False, "message": "No updatable fields provided"}), 400
+
+    values.append(expense_id)
+    sql = f"UPDATE expenses SET {', '.join(fields)} WHERE id = ?"
+    cursor.execute(sql, tuple(values))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"success": True, "message": "Expense updated successfully"}), 200
+
+
+@app.delete("/api/expenses/<int:expense_id>")
+def delete_expense(expense_id):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM expenses WHERE id = ?", (expense_id,))
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({"success": False, "message": "Expense not found"}), 404
+
+    cursor.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"success": True, "message": "Expense deleted successfully"}), 200
+
+# ------------ main -------------
+
 if __name__ == "__main__":
     init_db()
     app.run(debug=True)
